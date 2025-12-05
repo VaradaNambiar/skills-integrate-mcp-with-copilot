@@ -5,21 +5,109 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
+from typing import Optional
+from passlib.context import CryptContext
+import secrets
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
 
 app = FastAPI(title="Mergington High School API",
-              description="API for viewing and signing up for extracurricular activities")
+              description="API for viewing and signing up for extracurricular activities with authentication support.")
 
 # Mount the static files directory
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
 
+from .users import users
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# OAuth2 scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+
+# In-memory token store (for demo only)
+tokens = {}
+
 # In-memory activity database
+
+# User models
+class UserRegister(BaseModel):
+    email: str
+    password: str
+    role: str  # "student" or "club"
+    name: str
+    profile_image: Optional[str] = None
+
+class UserProfile(BaseModel):
+    email: str
+    role: str
+    name: str
+    profile_image: Optional[str] = None
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def authenticate_user(email: str, password: str):
+    user = users.get(email)
+    if not user:
+        return None
+    if not verify_password(password, user["password"]):
+        return None
+    return user
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    email = tokens.get(token)
+    if not email or email not in users:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    user = users[email]
+    return UserProfile(email=email, role=user["role"], name=user["name"], profile_image=user.get("profile_image"))
+
+
+# Registration endpoint
+@app.post("/register", status_code=201)
+def register(user: UserRegister):
+    if user.email in users:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    if user.role not in ("student", "club"):
+        raise HTTPException(status_code=400, detail="Role must be 'student' or 'club'")
+    hashed_pw = get_password_hash(user.password)
+    users[user.email] = {
+        "password": hashed_pw,
+        "role": user.role,
+        "name": user.name,
+        "profile_image": user.profile_image
+    }
+    return {"message": "User registered successfully"}
+
+# Token endpoint (login)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+    # Generate a token (for demo, use secrets.token_urlsafe)
+    token = secrets.token_urlsafe(32)
+    tokens[token] = form_data.username
+    return {"access_token": token, "token_type": "bearer"}
+
+# Get current user profile
+@app.get("/me", response_model=UserProfile)
+def get_me(current_user: UserProfile = Depends(get_current_user)):
+    return current_user
 activities = {
     "Chess Club": {
         "description": "Learn strategies and compete in chess tournaments",
