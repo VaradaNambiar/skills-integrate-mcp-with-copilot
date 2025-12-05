@@ -68,7 +68,11 @@ def authenticate_user(email: str, password: str):
 def get_current_user(token: str = Depends(oauth2_scheme)):
     email = tokens.get(token)
     if not email or email not in users:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
     user = users[email]
     return UserProfile(email=email, role=user["role"], name=user["name"], profile_image=user.get("profile_image"))
 
@@ -90,7 +94,7 @@ def register(user: UserRegister):
     return {"message": "User registered successfully"}
 
 # Token endpoint (login)
-@app.post("/token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
